@@ -1,145 +1,136 @@
 import streamlit as st
 from ultralytics import YOLO
 from PIL import Image
-import tempfile
+import numpy as np
 import os
 
-# ==========================================
+# =========================================================
 # PAGE CONFIGURATION
-# ==========================================
+# =========================================================
+
 st.set_page_config(
     page_title="Smart Road Damage Detection",
     page_icon="🛣️",
     layout="wide"
 )
 
-# ==========================================
+# =========================================================
 # CUSTOM CSS
-# ==========================================
+# =========================================================
+
 st.markdown("""
 <style>
+    .main-title {
+        text-align: center;
+        font-size: 38px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
 
-.main-title {
-    text-align: center;
-    font-size: 38px;
-    font-weight: 700;
-    margin-bottom: 5px;
-}
+    .subtitle {
+        text-align: center;
+        font-size: 18px;
+        margin-bottom: 30px;
+    }
 
-.subtitle {
-    text-align: center;
-    font-size: 17px;
-    margin-bottom: 25px;
-}
+    .result-box {
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #ddd;
+        margin-bottom: 15px;
+    }
 
-.result-card {
-    padding: 18px;
-    border-radius: 12px;
-    border: 1px solid #ddd;
-    margin-bottom: 15px;
-}
-
-.info-box {
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid #ddd;
-}
-
+    .confidence {
+        font-size: 18px;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# LOAD MODEL
-# ==========================================
-@st.cache_resource
-def load_model():
-    return YOLO("best.pt")
+# =========================================================
+# TITLE
+# =========================================================
 
-
-model = load_model()
-
-# ==========================================
-# CLASS NAMES
-# ==========================================
-class_names = {
-    "D00": "Longitudinal Crack",
-    "D10": "Transverse Crack",
-    "D20": "Alligator Crack",
-    "D40": "Pothole",
-    "D43": "Repair"
-}
-
-# ==========================================
-# SEVERITY FUNCTION
-# ==========================================
-def calculate_severity(box, image_width, image_height, damage_type):
-
-    x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-    box_width = x2 - x1
-    box_height = y2 - y1
-
-    damage_area = box_width * box_height
-    image_area = image_width * image_height
-
-    area_percentage = (damage_area / image_area) * 100
-
-    if damage_type in ["Pothole", "Repair"]:
-
-        if area_percentage >= 15:
-            severity = "High"
-        elif area_percentage >= 5:
-            severity = "Medium"
-        else:
-            severity = "Low"
-
-    else:
-
-        if area_percentage >= 20:
-            severity = "High"
-        elif area_percentage >= 8:
-            severity = "Medium"
-        else:
-            severity = "Low"
-
-    return severity
-
-
-# ==========================================
-# MAINTENANCE RECOMMENDATION
-# ==========================================
-def get_recommendation(severity):
-
-    if severity == "Low":
-        return "No Immediate Action Required"
-
-    elif severity == "Medium":
-        return "Schedule Maintenance"
-
-    else:
-        return "Immediate Repair Required"
-
-
-# ==========================================
-# HEADER
-# ==========================================
 st.markdown(
     '<div class="main-title">🛣️ Smart Road Damage Detection</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="subtitle">'
-    'AI-powered road damage detection using YOLO'
-    '</div>',
+    '<div class="subtitle">AI-powered road damage detection using YOLO</div>',
     unsafe_allow_html=True
 )
 
-st.divider()
+st.write(
+    "Upload a road image and the trained YOLO model will detect "
+    "possible road damage."
+)
 
-# ==========================================
+# =========================================================
+# DAMAGE CLASS INFORMATION
+# =========================================================
+
+CLASS_NAMES = {
+    0: "Longitudinal Crack",
+    1: "Transverse Crack",
+    2: "Alligator Crack",
+    3: "Pothole",
+    4: "Repair"
+}
+
+# =========================================================
+# SEVERITY
+# =========================================================
+
+def get_severity(confidence):
+    if confidence >= 0.75:
+        return "High"
+    elif confidence >= 0.50:
+        return "Medium"
+    else:
+        return "Low"
+
+
+# =========================================================
+# MAINTENANCE RECOMMENDATION
+# =========================================================
+
+def get_recommendation(damage_type, severity):
+
+    if severity == "High":
+        return "Immediate inspection and maintenance required."
+
+    elif severity == "Medium":
+        return "Schedule maintenance and monitor the damaged area."
+
+    else:
+        return "Monitor the area and perform maintenance if damage increases."
+
+
+# =========================================================
+# LOAD MODEL
+# =========================================================
+
+MODEL_PATH = "best.pt"
+
+if not os.path.exists(MODEL_PATH):
+    st.error(
+        f"Model file '{MODEL_PATH}' was not found. "
+        "Please make sure best.pt is in the project folder."
+    )
+    st.stop()
+
+@st.cache_resource
+def load_model():
+    return YOLO(MODEL_PATH)
+
+
+model = load_model()
+
+# =========================================================
 # SIDEBAR
-# ==========================================
+# =========================================================
+
 with st.sidebar:
 
     st.header("📌 About the Application")
@@ -157,8 +148,6 @@ with st.sidebar:
     st.write("• Pothole")
     st.write("• Repair")
 
-    st.divider()
-
     st.subheader("📊 Output")
 
     st.write("• Damage Type")
@@ -168,37 +157,28 @@ with st.sidebar:
 
     st.divider()
 
-    st.caption("Model: YOLO-based Road Damage Detector")
-    st.caption("Input: JPG / JPEG / PNG")
+    st.write("Model: YOLO-based Road Damage Detector")
+    st.write("Input: JPG / JPEG / PNG")
 
+# =========================================================
+# IMAGE UPLOAD
+# =========================================================
 
-# ==========================================
-# MAIN CONTENT
-# ==========================================
-st.subheader("📤 Upload Road Image")
-
-st.write(
-    "Upload a clear road image to detect possible "
-    "road damage."
-)
+st.header("📤 Upload Road Image")
 
 uploaded_file = st.file_uploader(
-    "Choose an image",
+    "Upload a clear road image to detect possible road damage.",
     type=["jpg", "jpeg", "png"]
 )
 
-# ==========================================
-# PROCESS IMAGE
-# ==========================================
+# =========================================================
+# PREDICTION
+# =========================================================
+
 if uploaded_file is not None:
 
     image = Image.open(uploaded_file).convert("RGB")
 
-    image_width, image_height = image.size
-
-    # --------------------------------------
-    # Display uploaded image
-    # --------------------------------------
     st.subheader("🖼️ Uploaded Image")
 
     st.image(
@@ -207,142 +187,142 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-    # --------------------------------------
-    # Temporary file
-    # --------------------------------------
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=".jpg"
-    ) as temp_file:
+    # Convert image to numpy array
+    image_array = np.array(image)
 
-        image.save(temp_file.name)
-        temp_path = temp_file.name
+    # =====================================================
+    # RUN YOLO
+    # =====================================================
 
-    # --------------------------------------
-    # Prediction
-    # --------------------------------------
-    with st.spinner("🔍 Analyzing road image..."):
+    with st.spinner("🔍 Detecting road damage..."):
 
         results = model.predict(
-            source=temp_path,
-            conf=0.25
+            source=image_array,
+            imgsz=640,
+            conf=0.25,
+            verbose=False
         )
 
     result = results[0]
 
-    st.divider()
+    # =====================================================
+    # DISPLAY DETECTION IMAGE
+    # =====================================================
 
-    # ======================================
-    # RESULTS
-    # ======================================
+    st.subheader("🎯 Detection Visualization")
+
+    annotated_image = result.plot()
+
+    annotated_image = annotated_image[:, :, ::-1]
+
+    st.image(
+        annotated_image,
+        caption="Detected Road Damage",
+        use_container_width=True
+    )
+
+    # =====================================================
+    # DETECTION RESULTS
+    # =====================================================
+
     st.subheader("📊 Detection Results")
 
-    # ======================================
-    # NO DAMAGE
-    # ======================================
-    if len(result.boxes) == 0:
+    boxes = result.boxes
 
-        st.success("✅ No road damage detected.")
+    if boxes is None or len(boxes) == 0:
 
-        st.info(
-            "Maintenance Recommendation: "
-            "No Immediate Action Required"
+        st.warning(
+            "⚠️ No road damage was detected in this image."
         )
 
-    # ======================================
-    # DAMAGE DETECTED
-    # ======================================
     else:
 
-        # ----------------------------------
-        # Annotated image
-        # ----------------------------------
-        annotated_image = result.plot()
-
-        st.subheader("🎯 Detected Damage")
-
-        st.image(
-            annotated_image,
-            caption="AI Detection Result",
-            use_container_width=True
+        st.success(
+            f"✅ {len(boxes)} damage detection(s) found."
         )
 
-        # ----------------------------------
-        # Process detections
-        # ----------------------------------
-        for i, box in enumerate(result.boxes):
+        for i, box in enumerate(boxes):
 
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
 
-            technical_name = model.names[class_id]
-
-            damage_name = class_names.get(
-                technical_name,
-                technical_name
+            damage_type = CLASS_NAMES.get(
+                class_id,
+                result.names.get(class_id, "Unknown")
             )
 
-            severity = calculate_severity(
-                box,
-                image_width,
-                image_height,
-                damage_name
-            )
+            severity = get_severity(confidence)
 
             recommendation = get_recommendation(
+                damage_type,
                 severity
             )
 
-            # --------------------------------
-            # Detection Heading
-            # --------------------------------
             st.markdown(
-                f"### 🔎 Detection {i + 1}"
+                f"""
+                <div class="result-box">
+
+                <h3>🔎 Detection {i + 1}</h3>
+
+                <b>Damage Type:</b> {damage_type}<br><br>
+
+                <b>Confidence:</b>
+                <span class="confidence">
+                {confidence * 100:.2f}%
+                </span>
+                <br><br>
+
+                <b>Severity:</b> {severity}<br><br>
+
+                <b>Maintenance Recommendation:</b>
+                {recommendation}
+
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-            # --------------------------------
-            # Result Columns
-            # --------------------------------
-            col1, col2, col3, col4 = st.columns(4)
+        # =================================================
+        # SUMMARY TABLE
+        # =================================================
 
-            with col1:
-                st.metric(
-                    "Damage Type",
-                    damage_name
-                )
+        st.subheader("📋 Detection Summary")
 
-            with col2:
-                st.metric(
-                    "Confidence",
-                    f"{confidence * 100:.2f}%"
-                )
+        summary_data = []
 
-            with col3:
-                st.metric(
-                    "Severity",
-                    severity
-                )
+        for i, box in enumerate(boxes):
 
-            with col4:
-                st.metric(
-                    "Action",
-                    recommendation
-                )
+            class_id = int(box.cls[0])
+            confidence = float(box.conf[0])
 
-            st.divider()
+            damage_type = CLASS_NAMES.get(
+                class_id,
+                result.names.get(class_id, "Unknown")
+            )
 
-    # ======================================
-    # CLEAN TEMP FILE
-    # ======================================
-    os.remove(temp_path)
+            severity = get_severity(confidence)
 
+            summary_data.append(
+                {
+                    "Detection": i + 1,
+                    "Damage Type": damage_type,
+                    "Confidence": f"{confidence * 100:.2f}%",
+                    "Severity": severity
+                }
+            )
 
-# ==========================================
+        st.dataframe(
+            summary_data,
+            use_container_width=True,
+            hide_index=True
+        )
+
+# =========================================================
 # FOOTER
-# ==========================================
+# =========================================================
+
 st.divider()
 
 st.caption(
-    "AI-Based Smart Road Damage Detection | "
-    "YOLO Road Damage Model"
+    "AI-Based Smart Road Damage Detection | YOLO Road Damage Model"
 )
