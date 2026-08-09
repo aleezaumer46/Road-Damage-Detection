@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.venv/
+
+# YOLO training/prediction outputs
+runs/
+
+# Dataset
+dataset/
+
+# Test/output files
+test_images/
+
+# Large trained model files
+best.pt
+last.pt
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
