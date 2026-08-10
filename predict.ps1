@@ -1,0 +1,1 @@
+yolo detect predict model="best.pt" source="dataset\RDD_SPLIT\test\images" imgsz=640 conf=0.25 save=True

@@ -1,7 +1,7 @@
 import streamlit as st
 from ultralytics import YOLO
 from PIL import Image
-import numpy as np
+import pandas as pd
 import tempfile
 import os
 
@@ -19,34 +19,33 @@ st.set_page_config(
 # CUSTOM CSS
 # =========================================================
 
-st.markdown("""
-<style>
+st.markdown(
+    """
+    <style>
     .main-title {
+        font-size: 42px;
+        font-weight: 700;
         text-align: center;
-        font-size: 38px;
-        font-weight: bold;
         margin-bottom: 5px;
     }
 
     .subtitle {
+        font-size: 20px;
         text-align: center;
-        font-size: 18px;
-        margin-bottom: 30px;
+        color: #666;
+        margin-bottom: 25px;
     }
 
-    .result-box {
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #ddd;
-        margin-bottom: 15px;
+    .info-box {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: #f5f5f5;
+        margin-bottom: 20px;
     }
-
-    .confidence {
-        font-size: 18px;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # =========================================================
 # TITLE
@@ -68,10 +67,19 @@ st.write(
 )
 
 # =========================================================
-# DAMAGE CLASS INFORMATION
+# MODEL PATH
 # =========================================================
 
-CLASS_NAMES = {
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "best.pt"
+
+# =========================================================
+# DAMAGE CLASS NAMES
+# =========================================================
+
+damage_names = {
     0: "Longitudinal Crack",
     1: "Transverse Crack",
     2: "Alligator Crack",
@@ -84,9 +92,14 @@ CLASS_NAMES = {
 # =========================================================
 
 def get_severity(confidence):
-    if confidence >= 0.75:
+    """
+    Confidence-based severity indicator.
+    Note: This represents model confidence, not physical damage severity.
+    """
+
+    if confidence >= 0.70:
         return "High"
-    elif confidence >= 0.50:
+    elif confidence >= 0.40:
         return "Medium"
     else:
         return "Low"
@@ -96,76 +109,61 @@ def get_severity(confidence):
 # MAINTENANCE RECOMMENDATION
 # =========================================================
 
-def get_recommendation(damage_type, severity):
+def get_recommendation(severity):
 
     if severity == "High":
-        return "Immediate inspection and maintenance required."
+        return (
+            "Priority inspection is recommended. "
+            "Schedule maintenance as soon as possible."
+        )
 
     elif severity == "Medium":
-        return "Schedule maintenance and monitor the damaged area."
+        return (
+            "Schedule maintenance and monitor the damaged "
+            "area for further deterioration."
+        )
 
     else:
-        return "Monitor the area and perform maintenance if damage increases."
+        return (
+            "Monitor the area and perform maintenance "
+            "if damage increases."
+        )
 
 
 # =========================================================
 # LOAD MODEL
 # =========================================================
 
-MODEL_PATH = "best.pt"
-
-if not os.path.exists(MODEL_PATH):
-    st.error(
-        f"Model file '{MODEL_PATH}' was not found. "
-        "Please make sure best.pt is in the project folder."
-    )
-    st.stop()
-
 @st.cache_resource
 def load_model():
     return YOLO(MODEL_PATH)
 
 
-model = load_model()
+try:
+    model = load_model()
+
+except Exception as e:
+    st.error("❌ Unable to load the YOLO model.")
+    st.error(str(e))
+    st.stop()
+
 
 # =========================================================
-# SIDEBAR
+# MODEL INFORMATION
 # =========================================================
 
-with st.sidebar:
+with st.expander("🤖 Model Information"):
 
-    st.header("📌 About the Application")
-
-    st.write(
-        "This application uses a trained YOLO model "
-        "to detect different types of road damage."
-    )
-
-    st.subheader("🔍 Supported Damage Types")
-
-    st.write("• Longitudinal Crack")
-    st.write("• Transverse Crack")
-    st.write("• Alligator Crack")
-    st.write("• Pothole")
-    st.write("• Repair")
-
-    st.subheader("📊 Output")
-
-    st.write("• Damage Type")
-    st.write("• Confidence Score")
-    st.write("• Severity Level")
-    st.write("• Maintenance Recommendation")
-
-    st.divider()
-
-    st.write("Model: YOLO-based Road Damage Detector")
-    st.write("Input: JPG / JPEG / PNG")
+    st.write("**Model:** YOLO")
+    st.write("**Model File:** best.pt")
+    st.write("**Image Size:** 640 × 640")
+    st.write("**Detection Threshold:** 20%")
 
 # =========================================================
 # IMAGE UPLOAD
 # =========================================================
 
-st.header("📤 Upload Road Image")
+st.subheader("📤 Upload Road Image")
 
 uploaded_file = st.file_uploader(
     "Upload a clear road image to detect possible road damage.",
@@ -173,12 +171,16 @@ uploaded_file = st.file_uploader(
 )
 
 # =========================================================
-# PREDICTION
+# PROCESS IMAGE
 # =========================================================
 
 if uploaded_file is not None:
 
     image = Image.open(uploaded_file).convert("RGB")
+
+    # =====================================================
+    # UPLOADED IMAGE
+    # =====================================================
 
     st.subheader("🖼️ Uploaded Image")
 
@@ -188,8 +190,17 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-    # Convert image to numpy array
-    image_array = np.array(image)
+    # =====================================================
+    # SAVE IMAGE TEMPORARILY
+    # =====================================================
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".jpg"
+    ) as temp_file:
+
+        image.save(temp_file.name)
+        temp_image_path = temp_file.name
 
     # =====================================================
     # RUN YOLO
@@ -198,23 +209,28 @@ if uploaded_file is not None:
     with st.spinner("🔍 Detecting road damage..."):
 
         results = model.predict(
-            source=image_array,
+            source=temp_image_path,
+            conf=0.20,
             imgsz=640,
-            conf=0.25,
             verbose=False
         )
+
+    # =====================================================
+    # REMOVE TEMPORARY IMAGE
+    # =====================================================
+
+    if os.path.exists(temp_image_path):
+        os.remove(temp_image_path)
 
     result = results[0]
 
     # =====================================================
-    # DISPLAY DETECTION IMAGE
+    # DETECTION VISUALIZATION
     # =====================================================
 
     st.subheader("🎯 Detection Visualization")
 
     annotated_image = result.plot()
-
-    annotated_image = annotated_image[:, :, ::-1]
 
     st.image(
         annotated_image,
@@ -228,94 +244,125 @@ if uploaded_file is not None:
 
     st.subheader("📊 Detection Results")
 
-    boxes = result.boxes
+    detections = []
 
-    if boxes is None or len(boxes) == 0:
+    if result.boxes is not None and len(result.boxes) > 0:
 
-        st.warning(
-            "⚠️ No road damage was detected in this image."
-        )
+        boxes = result.boxes
 
-    else:
+        for i in range(len(boxes)):
 
-        st.success(
-            f"✅ {len(boxes)} damage detection(s) found."
-        )
+            class_id = int(boxes.cls[i].item())
 
-        for i, box in enumerate(boxes):
+            confidence = float(boxes.conf[i].item())
 
-            class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
-
-            damage_type = CLASS_NAMES.get(
+            # Damage name
+            damage_type = damage_names.get(
                 class_id,
-                result.names.get(class_id, "Unknown")
+                model.names.get(class_id, "Unknown")
             )
 
+            # Confidence-based severity
             severity = get_severity(confidence)
 
-            recommendation = get_recommendation(
-                damage_type,
-                severity
-            )
+            # Recommendation
+            recommendation = get_recommendation(severity)
 
-            st.markdown(
-                f"""
-                <div class="result-box">
-
-                <h3>🔎 Detection {i + 1}</h3>
-
-                <b>Damage Type:</b> {damage_type}<br><br>
-
-                <b>Confidence:</b>
-                <span class="confidence">
-                {confidence * 100:.2f}%
-                </span>
-                <br><br>
-
-                <b>Severity:</b> {severity}<br><br>
-
-                <b>Maintenance Recommendation:</b>
-                {recommendation}
-
-                </div>
-                """,
-                unsafe_allow_html=True
+            detections.append(
+                {
+                    "Damage Type": damage_type,
+                    "Confidence": confidence,
+                    "Severity": severity,
+                    "Maintenance Recommendation": recommendation
+                }
             )
 
         # =================================================
-        # SUMMARY TABLE
+        # NUMBER OF DETECTIONS
+        # =================================================
+
+        st.success(
+            f"✅ {len(detections)} damage detection(s) found."
+        )
+
+        # =================================================
+        # INDIVIDUAL DETECTIONS
+        # =================================================
+
+        for i, detection in enumerate(detections, start=1):
+
+            st.markdown(
+                f"### 🔎 Detection {i}"
+            )
+
+            st.markdown(
+                f"**Damage Type:** {detection['Damage Type']}"
+            )
+
+            st.markdown(
+                f"**Confidence:** "
+                f"**{detection['Confidence'] * 100:.2f}%**"
+            )
+
+            st.markdown(
+                f"**Severity Indicator:** {detection['Severity']}"
+            )
+
+            st.markdown(
+                f"**Maintenance Recommendation:** "
+                f"{detection['Maintenance Recommendation']}"
+            )
+
+            st.divider()
+
+        # =================================================
+        # DETECTION SUMMARY
         # =================================================
 
         st.subheader("📋 Detection Summary")
 
-        summary_data = []
+        df = pd.DataFrame(detections)
 
-        for i, box in enumerate(boxes):
+        # Format confidence for display
+        display_df = df.copy()
 
-            class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
-
-            damage_type = CLASS_NAMES.get(
-                class_id,
-                result.names.get(class_id, "Unknown")
-            )
-
-            severity = get_severity(confidence)
-
-            summary_data.append(
-                {
-                    "Detection": i + 1,
-                    "Damage Type": damage_type,
-                    "Confidence": f"{confidence * 100:.2f}%",
-                    "Severity": severity
-                }
-            )
+        display_df["Confidence"] = (
+            display_df["Confidence"] * 100
+        ).round(2).astype(str) + "%"
 
         st.dataframe(
-            summary_data,
+            display_df,
             use_container_width=True,
             hide_index=True
+        )
+
+        # =================================================
+        # DAMAGE TYPE SUMMARY
+        # =================================================
+
+        st.subheader("📈 Damage Type Summary")
+
+        damage_counts = (
+            df["Damage Type"]
+            .value_counts()
+            .reset_index()
+        )
+
+        damage_counts.columns = [
+            "Damage Type",
+            "Number of Detections"
+        ]
+
+        st.dataframe(
+            damage_counts,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.warning(
+            "⚠️ No road damage was detected in this image."
         )
 
 # =========================================================
