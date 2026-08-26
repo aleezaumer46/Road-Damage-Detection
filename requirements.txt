@@ -1,6 +1,6 @@
 streamlit==1.61.1
 ultralytics==8.4.117
-opencv-python-headless==4.13.0.92
+opencv-python-headless==4.10.0.84
 pillow
 pandas
 torch
